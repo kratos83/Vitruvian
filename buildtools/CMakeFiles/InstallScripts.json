@@ -1,0 +1,19 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/angelo/Scaricati/Vitruvian/buildtools/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/build/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/build/libbe/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/build/libbe/app/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/build/libbe/interface/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/build/libbe/storage/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/build/libbe/support/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/build/libroot/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/bin/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/bin/rc/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/tools/cmake_install.cmake",
+		"/home/angelo/Scaricati/Vitruvian/buildtools/src/tools/locale/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
