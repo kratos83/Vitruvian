@@ -7,8 +7,14 @@ get_base_packages() {
             printf '%s' \
                 "apt-utils dialog linux-image-rt-amd64 systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
+<<<<<<< HEAD
                 " network-manager bluez net-tools wireless-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping xfsprogs" \
+=======
+                " network-manager bluez net-tools wireless-tools curl openssh-client" \
+                " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping linux-sysctl-defaults xfsprogs" \
+                " fdisk e2fsprogs btrfs-progs cryptsetup dosfstools" \
+>>>>>>> origin/master
                 " fortune-mod ncurses-bin rsync" \
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
                 " grub-common grub2-common grub-efi-amd64-bin grub-efi-ia32-bin grub-pc-bin" \
@@ -20,8 +26,14 @@ get_base_packages() {
             printf '%s' \
                 "apt-utils dialog linux-image-arm64 systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
+<<<<<<< HEAD
                 " network-manager bluez net-tools wireless-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping xfsprogs" \
+=======
+                " network-manager bluez net-tools wireless-tools curl openssh-client" \
+                " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping linux-sysctl-defaults xfsprogs" \
+                " fdisk e2fsprogs btrfs-progs cryptsetup dosfstools" \
+>>>>>>> origin/master
                 " fortune-mod ncurses-bin rsync" \
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
                 " grub-common grub2-common grub-efi-arm64-bin" \
@@ -33,8 +45,13 @@ get_base_packages() {
             printf '%s' \
                 "apt-utils dialog linux-image-armmp systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
+<<<<<<< HEAD
                 " network-manager bluez net-tools wireless-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping" \
+=======
+                " network-manager bluez net-tools wireless-tools curl openssh-client" \
+                " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping linux-sysctl-defaults" \
+>>>>>>> origin/master
                 " fortune-mod ncurses-bin rsync" \
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
                 " grub-common" \
@@ -46,9 +63,16 @@ get_base_packages() {
             printf '%s' \
                 "apt-utils dialog linux-image-riscv64 systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
+<<<<<<< HEAD
                 " network-manager bluez net-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping xfsprogs" \
                 " ncurses-bin rsync" \
+=======
+                " network-manager bluez net-tools wireless-tools curl openssh-client" \
+                " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping linux-sysctl-defaults xfsprogs" \
+                " fdisk e2fsprogs btrfs-progs cryptsetup dosfstools" \
+                " fortune-mod ncurses-bin rsync" \
+>>>>>>> origin/master
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
                 " grub-common grub2-common grub-efi-riscv64-bin" \
                 " firmware-misc-nonfree firmware-realtek firmware-atheros firmware-ath9k-htc firmware-brcm80211" \
@@ -100,7 +124,7 @@ get_dev_packages() {
                 " libxkbcommon-dev libsystemd-dev libpam0g-dev libpwquality-dev" \
                 " libgcrypt20-dev libapt-pkg-dev" \
                 " libjpeg-dev libpng-dev libtiff-dev libwebp-dev libicns-dev" \
-                " libpipewire-0.3-dev libspa-0.2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libnm-dev libbluetooth-dev"
+                " libpipewire-0.3-dev libspa-0.2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libglu1-mesa-dev libnm-dev libbluetooth-dev"
             ;;
         riscv64)
             printf '%s' \
@@ -112,7 +136,7 @@ get_dev_packages() {
                 " libxkbcommon-dev libsystemd-dev libpam0g-dev libpwquality-dev" \
                 " libgcrypt20-dev libapt-pkg-dev" \
                 " libjpeg-dev libpng-dev libtiff-dev libwebp-dev libicns-dev" \
-                " libpipewire-0.3-dev libspa-0.2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libnm-dev libbluetooth-dev"
+                " libpipewire-0.3-dev libspa-0.2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libglu1-mesa-dev libnm-dev libbluetooth-dev"
             ;;
         *)
             die "No dev package list for architecture: $_arch"

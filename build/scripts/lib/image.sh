@@ -454,7 +454,15 @@ SSHEOF
         -b 1048576 -comp xz -Xdict-size 100% -xattrs
 
     log_step "Copying kernel and initramfs..."
-    cp "$_chroot_dir/boot/vmlinuz-$_imagekernelversion" "$_basedir/image_tree/image/vmlinuz"
+    # riscv64's linux-image ships an uncompressed vmlinux-<ver> (no vmlinuz-);
+    # the /vmlinuz symlink in the chroot root points at whichever exists.
+    if [ ! -f "$_chroot_dir/boot/vmlinuz-$_imagekernelversion" ] \
+       && [ -f "$_chroot_dir/boot/vmlinux-$_imagekernelversion" ]; then
+        log_step "riscv64: using uncompressed vmlinux-$_imagekernelversion"
+        cp "$_chroot_dir/boot/vmlinux-$_imagekernelversion" "$_basedir/image_tree/image/vmlinuz"
+    else
+        cp "$_chroot_dir/boot/vmlinuz-$_imagekernelversion" "$_basedir/image_tree/image/vmlinuz"
+    fi
     cp "$_chroot_dir/boot/initrd.img-$_imagekernelversion" "$_basedir/image_tree/image/initrd"
 
     log_step "Creating GRUB menu..."
@@ -524,7 +532,7 @@ EOF
         sudo mkdir -p "$_basedir/image_tree/chroot/scratch"
         sudo cp "$_basedir/image_tree/scratch/grub.cfg" "$_basedir/image_tree/chroot/scratch/"
         sudo chroot "$_basedir/image_tree/chroot" /usr/bin/grub-mkstandalone \
-            --directory=/usr/lib/grub/arm64-efi \
+            --directory="/usr/lib/grub/$_efi_target" \
             --format="$_efi_target" \
             --output="/scratch/$_efi_name" \
             --locales="" \
@@ -710,7 +718,14 @@ create_raspberry() {
     _board="${2:-raspberry}"
     _board_arch="$(board_config "$_board" arch)"
     _deb_arch="$(arch_to_deb "$_board_arch")"
-    _raw="$_basedir/output/vitruvian-$_board.raw"
+    # The fleet collector looks for "vos-raspberry.raw" specifically (legacy
+    # naming predating the vitruvian- rebrand of the other board outputs);
+    # every other board keeps the vitruvian-<board>.raw convention.
+    if [ "$_board" = "raspberry" ]; then
+        _raw="$_basedir/output/vos-raspberry.raw"
+    else
+        _raw="$_basedir/output/vitruvian-$_board.raw"
+    fi
     _mnt="/mnt/vitruvian"
     _hostname="vitruvian"
     _user=""
@@ -971,7 +986,13 @@ label vitruvian
 EXTLINUX
     sudo sed -i "s/EXTROOTFS/$_root_fs/" "$_mnt/boot/extlinux/extlinux.conf"
 
-    sudo cp "$_mnt/boot/vmlinuz-$_kver" "$_mnt/boot/vmlinuz"
+    # riscv64's linux-image ships an uncompressed vmlinux-<ver> (no vmlinuz-);
+    # see the same fallback in create_iso() above.
+    if [ ! -f "$_mnt/boot/vmlinuz-$_kver" ] && [ -f "$_mnt/boot/vmlinux-$_kver" ]; then
+        sudo cp "$_mnt/boot/vmlinux-$_kver" "$_mnt/boot/vmlinuz"
+    else
+        sudo cp "$_mnt/boot/vmlinuz-$_kver" "$_mnt/boot/vmlinuz"
+    fi
     sudo cp "$_mnt/boot/initrd.img-$_kver" "$_mnt/boot/initrd.img"
 
     case "$_root_fs" in

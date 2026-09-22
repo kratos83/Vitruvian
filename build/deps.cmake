@@ -62,7 +62,7 @@ DeclareDependency(
 	EVDEV
 	LIBRARIES	"evdev"
 	PACKAGES	"libevdev-dev"
-	RUNTIMES	"libevdev-dev (>= 1.13.4)"
+	RUNTIMES	"libevdev2 (>= 1.13.4)"
 	INCLUDES	"${HEADERS_PATH_BASE}/libevdev-1.0/"
 )
 
@@ -122,6 +122,13 @@ DeclareDependency(
 	LIBRARIES	"blkid"
 	PACKAGES	"libblkid-dev"
 	RUNTIMES	"libblkid1 (>= 2.41-5)"
+)
+
+DeclareDependency(
+	FDISK
+	LIBRARIES	"fdisk"
+	PACKAGES	"libfdisk-dev"
+	RUNTIMES	"libfdisk1 (>= 2.41-5)"
 )
 
 DeclareDependency(
