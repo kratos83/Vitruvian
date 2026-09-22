@@ -101,7 +101,7 @@ create_raw() {
     sudo umount -l "$_mnt"          2>/dev/null || true
 
     log_step "Creating RAW image..."
-    qemu-img create "$_raw" 4G
+    qemu-img create "$_raw" 8G
 
     _loop=$(sudo losetup --show -f -P "$_raw")
     log_info "Loop device: $_loop"
