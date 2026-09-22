@@ -133,10 +133,15 @@ create_raw() {
     sudo mount "$_efi_part" "$_mnt/boot/efi"
 
     log_step "Copying chroot into RAW image (rsync)..."
+    # apt's downloaded index files serve no purpose on the target (they go
+    # stale within days and a fresh `apt-get update` is needed before any
+    # install anyway) but do take real space -- with contrib/non-free/
+    # non-free-firmware enabled and the growing firmware/microcode package
+    # set, they were enough to overflow the fixed-size root partition below.
     sudo rsync -aHAXx --numeric-ids \
         --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' \
         --exclude='/tmp/*'  --exclude='/run/*'  --exclude='/localdeb' \
-        --exclude='/scratch' \
+        --exclude='/scratch' --exclude='/var/lib/apt/lists/*' \
         "$_chroot_dir/" "$_mnt/"
 
     sudo mkdir -p "$_mnt/proc" "$_mnt/sys" "$_mnt/dev" "$_mnt/run" "$_mnt/tmp"
