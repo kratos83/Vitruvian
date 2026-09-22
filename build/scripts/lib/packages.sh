@@ -7,41 +7,53 @@ get_base_packages() {
             printf '%s' \
                 "apt-utils dialog linux-image-rt-amd64 systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
-                " network-manager bluez net-tools wireless-tools curl openssh-client" \
+                " network-manager bluez net-tools wireless-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping xfsprogs" \
                 " fortune-mod ncurses-bin rsync" \
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
-                " grub-common grub2-common grub-efi-amd64-bin grub-efi-ia32-bin grub-pc-bin"
+                " grub-common grub2-common grub-efi-amd64-bin grub-efi-ia32-bin grub-pc-bin" \
+                " firmware-misc-nonfree firmware-realtek firmware-iwlwifi firmware-atheros firmware-ath9k-htc firmware-brcm80211" \
+                " firmware-amd-graphics firmware-nvidia-graphics firmware-sof-signed firmware-cirrus intel-microcode amd64-microcode" \
+                " libnm0 libbluetooth3 "
             ;;
         arm64)
             printf '%s' \
                 "apt-utils dialog linux-image-arm64 systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
-                " network-manager bluez net-tools wireless-tools curl openssh-client" \
+                " network-manager bluez net-tools wireless-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping xfsprogs" \
                 " fortune-mod ncurses-bin rsync" \
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
-                " grub-common grub2-common grub-efi-arm64-bin"
+                " grub-common grub2-common grub-efi-arm64-bin" \
+                " firmware-misc-nonfree firmware-realtek firmware-iwlwifi firmware-atheros firmware-ath9k-htc firmware-brcm80211" \
+                " firmware-amd-graphics firmware-nvidia-graphics firmware-sof-signed firmware-cirrus" \
+                " libnm0 libbluetooth3"
             ;;
         arm32)
             printf '%s' \
                 "apt-utils dialog linux-image-armmp systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
-                " network-manager bluez net-tools wireless-tools curl openssh-client" \
+                " network-manager bluez net-tools wireless-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping" \
                 " fortune-mod ncurses-bin rsync" \
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
-                " grub-common"
+                " grub-common" \
+                " firmware-misc-nonfree firmware-realtek firmware-iwlwifi firmware-atheros firmware-ath9k-htc firmware-brcm80211" \
+                " firmware-sof-signed firmware-cirrus "\
+                " libnm0 libbluetooth3"
             ;;
         riscv64)
             printf '%s' \
                 "apt-utils dialog linux-image-riscv64 systemd-sysv" \
                 " polkitd pkexec sudo dbus-user-session" \
-                " network-manager bluez net-tools curl openssh-client" \
+                " network-manager bluez net-tools wireless-regdb wpasupplicant rfkill curl openssh-client" \
                 " procps vim-tiny libbinutils openssh-server locales libnss-myhostname xdg-user-dirs ca-certificates iputils-ping xfsprogs" \
                 " ncurses-bin rsync" \
                 " pipewire-audio pipewire-bin wireplumber gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav" \
-                " grub-common grub2-common grub-efi-riscv64-bin"
+                " grub-common grub2-common grub-efi-riscv64-bin" \
+                " firmware-misc-nonfree firmware-realtek firmware-atheros firmware-ath9k-htc firmware-brcm80211" \
+                " firmware-sof-signed firmware-cirrus " \
+                " libnm0 libbluetooth3"
             ;;
         *)
             die "No package list for architecture: $_arch"
