@@ -164,6 +164,11 @@ create_raw() {
 
 umount /sys/firmware/efi/efivars 2>/dev/null || true
 
+# The rsync above excluded /var/lib/apt/lists (see its comment) to fit the
+# root partition, which leaves apt with an empty package index -- nothing
+# below can resolve or install until it is rebuilt.
+apt-get update
+
 apt-get remove -y vos nexus-dkms 2>/dev/null || true
 
 rm -f /usr/share/initramfs-tools/hooks/live*
@@ -216,7 +221,13 @@ host_shared      $_guest_mnt  9p     trans=virtio,version=9p2000.L,rw,nofail,x-s
 FSTABEOF
 
 mkdir -p $_guest_mnt
-rm -rf /localdeb" || die "raw chroot bash-c failed"
+rm -rf /localdeb
+
+# Undo the apt-get update above: the index is stale the moment this image
+# is written anyway, and shipping it would put the excluded rsync space
+# straight back.
+apt-get clean
+rm -rf /var/lib/apt/lists/*" || die "raw chroot bash-c failed"
 
     _common_chroot_setup "$_mnt" "$_hostname" "$_user" "$_pass" \
         || die "_common_chroot_setup failed"
