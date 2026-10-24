@@ -21,11 +21,16 @@ if(NOT DEFINED VOS_DYNAMIC_LINKER)
 	execute_process(
 		COMMAND ${CMAKE_C_COMPILER} -dumpmachine
 		OUTPUT_VARIABLE _vos_triple OUTPUT_STRIP_TRAILING_WHITESPACE)
-	if(_vos_triple STREQUAL "x86_64-linux-gnu")
+	# Match on the arch field only: both the vendor field (Debian/Ubuntu:
+	# none, Arch: "pc", Fedora/RHEL: "redhat", openSUSE: "suse") and the
+	# trailing "-gnu" (RedHat-based distros' gcc -dumpmachine omits it,
+	# e.g. "x86_64-redhat-linux") vary across distros, while the dynamic
+	# linker path only depends on arch+libc.
+	if(_vos_triple MATCHES "^x86_64-([^-]+-)?linux(-gnu)?$")
 		set(VOS_DYNAMIC_LINKER "/lib64/ld-linux-x86-64.so.2")
-	elseif(_vos_triple STREQUAL "aarch64-linux-gnu")
+	elseif(_vos_triple MATCHES "^aarch64-([^-]+-)?linux(-gnu)?$")
 		set(VOS_DYNAMIC_LINKER "/lib/ld-linux-aarch64.so.1")
-	elseif(_vos_triple STREQUAL "riscv64-linux-gnu")
+	elseif(_vos_triple MATCHES "^riscv64-([^-]+-)?linux(-gnu)?$")
 		set(VOS_DYNAMIC_LINKER "/lib/ld-linux-riscv64-lp64d.so.1")
 	else()
 		message(FATAL_ERROR "RunnableAddOn: unknown interpreter for ${_vos_triple}")

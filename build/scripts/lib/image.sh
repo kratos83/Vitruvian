@@ -177,11 +177,11 @@ create_raw() {
     _raw_pkgs="$(get_raw_image_packages "$_arch")"
     _raw_dev_pkgs="$(get_dev_packages "$_arch")"
     _raw_kver="$(ls -1 "$_root_dir/lib/modules" | sort -V | tail -1)"
-    sudo chroot "$_root_dir" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    sudo chroot "$_root_dir" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 apt-get install -y --download-only --no-install-recommends $_raw_pkgs \
     dkms build-essential linux-headers-$_raw_kver /localdeb/*.deb" \
         || die "raw package download failed"
-    chroot_isolated "$_root_dir" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    chroot_isolated "$_root_dir" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 
 umount /sys/firmware/efi/efivars 2>/dev/null || true
 
@@ -329,24 +329,34 @@ fi
 EOF
 
     if [ "$_arch" = amd64 ]; then
-        require_cmd grub-mkstandalone grub-common
-        grub-mkstandalone \
-            --format="$_efi_target" \
-            --output="$_basedir/image_tree/scratch/$_boot_efi" \
-            --locales="" --fonts="" \
-            "boot/grub/grub.cfg=$_basedir/image_tree/scratch/raw_embedded_grub.cfg"
-        log_step "Building 32-bit EFI stub (BOOTIA32.EFI) for 32-bit UEFI firmware..."
+        # Built inside the root, not on the host: grub-mkstandalone (and
+        # the x86_64-efi/i386-efi platform directories it needs) is not
+        # guaranteed to exist on the host at all -- Fedora doesn't ship it
+        # by default -- while the root always has grub-efi-amd64-bin /
+        # grub-efi-ia32-bin from packages.sh. One copy of the grub.cfg in
+        # the root serves both the 64-bit and 32-bit builds below.
         sudo cp "$_basedir/image_tree/scratch/raw_embedded_grub.cfg" \
-            "$_root_dir/tmp/grub_ia32.cfg"
+            "$_root_dir/tmp/grub_efi.cfg"
+        chroot_isolated "$_root_dir" grub-mkstandalone \
+            --directory=/usr/lib/grub/x86_64-efi \
+            --format=x86_64-efi \
+            --output=/tmp/boot_efi \
+            --locales="" --fonts="" \
+            "boot/grub/grub.cfg=/tmp/grub_efi.cfg"
+        sudo cp "$_root_dir/tmp/boot_efi" \
+            "$_basedir/image_tree/scratch/$_boot_efi"
+        sudo rm -f "$_root_dir/tmp/boot_efi"
+
+        log_step "Building 32-bit EFI stub (BOOTIA32.EFI) for 32-bit UEFI firmware..."
         chroot_isolated "$_root_dir" grub-mkstandalone \
             --directory=/usr/lib/grub/i386-efi \
             --format=i386-efi \
             --output=/tmp/BOOTIA32.EFI \
             --locales="" --fonts="" \
-            "boot/grub/grub.cfg=/tmp/grub_ia32.cfg"
+            "boot/grub/grub.cfg=/tmp/grub_efi.cfg"
         sudo cp "$_root_dir/tmp/BOOTIA32.EFI" \
             "$_basedir/image_tree/scratch/BOOTIA32.EFI"
-        sudo rm -f "$_root_dir/tmp/BOOTIA32.EFI" "$_root_dir/tmp/grub_ia32.cfg"
+        sudo rm -f "$_root_dir/tmp/BOOTIA32.EFI" "$_root_dir/tmp/grub_efi.cfg"
     else
         # The host rarely carries foreign-arch grub modules; the configured
         # root has them (grub-efi-arm64-bin etc. via get_raw_image_packages).
@@ -476,10 +486,10 @@ create_iso() {
     _iso_debs="$(cd "$_basedir" && ls *.deb | sed 's|^|/tmp/|' | tr '\n' ' ')"
     _iso_dev_pkgs="$(get_dev_packages "$_arch")"
     log_step "Installing debs into chroot..."
-    sudo chroot "$_chroot_dir" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    sudo chroot "$_chroot_dir" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 apt-get install -y --download-only --no-install-recommends dkms build-essential linux-headers-$_imagekernelversion $_iso_pkgs $_iso_debs" \
         || die "iso package download failed"
-    chroot_isolated "$_chroot_dir" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    chroot_isolated "$_chroot_dir" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 apt-get remove -y vos nexus-dkms || true
 # Before anything builds an initramfs: /proc/swaps would hand it the build host's swap.
 mkdir -p /etc/initramfs-tools/conf.d
@@ -590,25 +600,36 @@ EOF
 
     log_step "Building EFI bootloader ($_efi_target)..."
     if [ "$_arch" = "amd64" ]; then
-        grub-mkstandalone \
-            --format="$_efi_target" \
-            --output="$_basedir/image_tree/scratch/$_efi_name" \
+        # Built inside the chroot, not on the host: grub-mkstandalone (and
+        # the x86_64-efi/i386-efi platform directories it needs) is not
+        # guaranteed to exist on the host at all -- Fedora doesn't ship it
+        # by default -- while the chroot always has grub-efi-amd64-bin /
+        # grub-efi-ia32-bin from packages.sh. One copy of grub.cfg in the
+        # chroot serves both the 64-bit and 32-bit builds below.
+        sudo cp "$_basedir/image_tree/scratch/grub.cfg" \
+            "$_chroot_dir/tmp/grub_efi.cfg"
+        chroot_isolated "$_chroot_dir" grub-mkstandalone \
+            --directory=/usr/lib/grub/x86_64-efi \
+            --format=x86_64-efi \
+            --output=/tmp/bootx64.efi \
             --locales="" \
             --fonts="" \
-            "boot/grub/grub.cfg=$_basedir/image_tree/scratch/grub.cfg"
+            "boot/grub/grub.cfg=/tmp/grub_efi.cfg"
+        sudo cp "$_chroot_dir/tmp/bootx64.efi" \
+            "$_basedir/image_tree/scratch/$_efi_name"
+        sudo rm -f "$_chroot_dir/tmp/bootx64.efi"
+
         log_step "Building 32-bit EFI bootloader (i386-efi) for 32-bit UEFI firmware..."
-        sudo cp "$_basedir/image_tree/scratch/grub.cfg" \
-            "$_chroot_dir/tmp/grub_ia32.cfg"
         chroot_isolated "$_chroot_dir" grub-mkstandalone \
             --directory=/usr/lib/grub/i386-efi \
             --format=i386-efi \
             --output=/tmp/bootia32.efi \
             --locales="" \
             --fonts="" \
-            "boot/grub/grub.cfg=/tmp/grub_ia32.cfg"
+            "boot/grub/grub.cfg=/tmp/grub_efi.cfg"
         sudo cp "$_chroot_dir/tmp/bootia32.efi" \
             "$_basedir/image_tree/scratch/bootia32.efi"
-        sudo rm -f "$_chroot_dir/tmp/bootia32.efi" "$_chroot_dir/tmp/grub_ia32.cfg"
+        sudo rm -f "$_chroot_dir/tmp/bootia32.efi" "$_chroot_dir/tmp/grub_efi.cfg"
     else
         sudo mkdir -p "$_basedir/image_tree/chroot/scratch"
         sudo cp "$_basedir/image_tree/scratch/grub.cfg" "$_basedir/image_tree/chroot/scratch/"
@@ -635,17 +656,26 @@ EOF
 
     if [ "$_arch" = "amd64" ]; then
         log_step "Building legacy BIOS bootloader..."
-        grub-mkstandalone \
+        # Built inside the chroot, not on the host: GRUB hardcodes a
+        # 0x78000 cap on the i386-pc core.img (the fixed embedding-area
+        # size), and the host's (Arch) grub-pc modules aren't size-tuned
+        # for that the way Debian's grub-pc-bin is -- building on the host
+        # blows straight through it ("l'immagine core e' troppo grande").
+        sudo cp "$_basedir/image_tree/scratch/grub.cfg" \
+            "$_chroot_dir/tmp/grub_bios.cfg"
+        chroot_isolated "$_chroot_dir" grub-mkstandalone \
             --format=i386-pc \
-            --output="$_basedir/image_tree/scratch/core.img" \
+            --output=/tmp/core.img \
             --install-modules="linux normal iso9660 biosdisk memdisk search tar ls all_video" \
             --modules="linux normal iso9660 biosdisk search all_video" \
             --locales="" \
             --fonts="" \
-            "boot/grub/grub.cfg=$_basedir/image_tree/scratch/grub.cfg"
+            "boot/grub/grub.cfg=/tmp/grub_bios.cfg"
+        sudo cp "$_chroot_dir/tmp/core.img" "$_basedir/image_tree/scratch/core.img"
+        sudo rm -f "$_chroot_dir/tmp/core.img" "$_chroot_dir/tmp/grub_bios.cfg"
 
         cat \
-            /usr/lib/grub/i386-pc/cdboot.img \
+            "$_chroot_dir/usr/lib/grub/i386-pc/cdboot.img" \
             "$_basedir/image_tree/scratch/core.img" \
             > "$_basedir/image_tree/scratch/bios.img"
     fi
@@ -667,7 +697,7 @@ EOF
                 -boot-info-table \
                 --eltorito-catalog boot/grub/boot.cat \
             --grub2-boot-info \
-            --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
+            --grub2-mbr "$_chroot_dir/usr/lib/grub/i386-pc/boot_hybrid.img" \
             -append_partition 2 0xef "$_basedir/image_tree/scratch/efiboot.img" \
             -appended_part_as_gpt \
             -eltorito-alt-boot \
@@ -707,7 +737,7 @@ _common_chroot_setup() {
     _hostname="$2"
     # $5: 1 = live ISO (boots via boot=live), 0 = installed-like image.
     _live="${5:-0}"
-    chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 echo '$_hostname' > /etc/hostname
 
 # Rewrite /etc/hosts so it has the correct hostname.
@@ -815,6 +845,9 @@ _debug_ssh_setup() {
     # vitruvian.sshdebug. Shipped from staging since the vos deb carries it only when built Debug.
     local _chroot="$1"
     chroot_isolated "$_chroot" /bin/bash -eux <<'SSHEOF'
+# chroot() doesn't reset PATH -- it inherits whatever the host shell had,
+# which may lack /usr/sbin even though that's where chpasswd lives here.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/debug.conf <<'EOF'
@@ -992,7 +1025,7 @@ VOSSRC
     log_step "Configuring system..."
     # set -e: bash -c returns the status of its LAST command, so the old
     # one-line form returned the trailing if-block and hid apt failures.
-    sudo chroot "$_mnt" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    sudo chroot "$_mnt" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 apt update
 # apt downgrades an unreachable source to a warning, so prove the repo
 # resolved a candidate instead of shipping without VitruvianOS.
@@ -1014,7 +1047,7 @@ apt-get install -y --download-only --no-install-recommends $_board_pkgs \$(ls /l
         sudo mkdir -p "$_mnt/etc/initramfs-tools/conf.d"
         echo RESUME=none | sudo tee "$_mnt/etc/initramfs-tools/conf.d/resume" >/dev/null
         if native_pkg_unpack "$_mnt" \
-           && chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+           && chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 dpkg --configure -a
 rm -rf /localdeb
 # apt's package caches would otherwise ship in the image.
@@ -1028,7 +1061,7 @@ apt-get autoremove -y --purge"; then
         fi
     fi
     if [ "${_native_ok:-0}" = 0 ]; then
-    chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 # Before anything builds an initramfs: /proc/swaps would hand it the build host's swap.
 mkdir -p /etc/initramfs-tools/conf.d
 echo RESUME=none > /etc/initramfs-tools/conf.d/resume
@@ -1318,7 +1351,7 @@ VOSSRC
     fi
 
     log_step "Configuring $_label system..."
-    sudo chroot "$_mnt" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    sudo chroot "$_mnt" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 apt update
 # See create_raspberry: prove the VOS repo actually resolved a candidate.
 if [ -f /etc/apt/sources.list.d/vitruvian.sources ]; then
@@ -1336,7 +1369,7 @@ apt-get install -y --download-only --no-install-recommends $_board_pkgs u-boot-m
         sudo mkdir -p "$_mnt/etc/initramfs-tools/conf.d"
         echo RESUME=none | sudo tee "$_mnt/etc/initramfs-tools/conf.d/resume" >/dev/null
         if native_pkg_unpack "$_mnt" \
-           && chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+           && chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 dpkg --configure -a
 rm -rf /localdeb
 # apt's package caches would otherwise ship in the image.
@@ -1350,7 +1383,7 @@ apt-get autoremove -y --purge"; then
         fi
     fi
     if [ "${_native_ok:-0}" = 0 ]; then
-    chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
+    chroot_isolated "$_mnt" /usr/bin/env $CHROOT_PROXY PATH=/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "set -e
 # Before anything builds an initramfs: /proc/swaps would hand it the build host's swap.
 mkdir -p /etc/initramfs-tools/conf.d
 echo RESUME=none > /etc/initramfs-tools/conf.d/resume

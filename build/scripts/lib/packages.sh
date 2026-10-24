@@ -100,7 +100,7 @@ get_dev_packages() {
     case "$_arch" in
         amd64)
             printf '%s' \
-                "linux-headers-$(get_kernel_flavour) pkg-config libc6-dev libcrypt-dev libstdc++-14-dev" \
+                "linux-headers-$(get_kernel_flavour) pkg-config build-essential debhelper dkms dh-dkms cmake ninja-build bison flex git attr libc6-dev libcrypt-dev libstdc++-14-dev" \
                 " libfreetype-dev libicu-dev libcairo2-dev libcups2-dev libdrm-dev libinput-dev" \
                 " libevdev-dev libseat-dev libudev-dev zlib1g-dev libgif-dev" \
                 " libblkid-dev libbacktrace-dev libfl-dev libncurses-dev" \
@@ -115,7 +115,7 @@ get_dev_packages() {
             ;;
         arm64)
             printf '%s' \
-                "linux-headers-arm64 pkg-config libc6-dev libcrypt-dev libstdc++-14-dev" \
+                "linux-headers-arm64 pkg-config build-essential debhelper dkms dh-dkms cmake ninja-build bison flex git attr libc6-dev libcrypt-dev libstdc++-14-dev" \
                 " libfreetype-dev libicu-dev libcairo2-dev libcups2-dev libdrm-dev libinput-dev" \
                 " libevdev-dev libseat-dev libudev-dev zlib1g-dev libgif-dev" \
                 " libblkid-dev libbacktrace-dev libfl-dev libncurses-dev" \
@@ -130,7 +130,7 @@ get_dev_packages() {
             ;;
         arm32)
             printf '%s' \
-                "linux-headers-armmp pkg-config libc6-dev libcrypt-dev libstdc++-14-dev" \
+                "linux-headers-armmp pkg-config build-essential debhelper dkms dh-dkms cmake ninja-build bison flex git attr libc6-dev libcrypt-dev libstdc++-14-dev" \
                 " libfreetype-dev libicu-dev libcairo2-dev libcups2-dev libdrm-dev libinput-dev" \
                 " libevdev-dev libseat-dev libudev-dev zlib1g-dev libgif-dev" \
                 " libblkid-dev libbacktrace-dev libfl-dev libncurses-dev" \
@@ -144,7 +144,7 @@ get_dev_packages() {
             ;;
         riscv64)
             printf '%s' \
-                "linux-headers-riscv64 pkg-config libc6-dev libcrypt-dev libstdc++-14-dev" \
+                "linux-headers-riscv64 pkg-config build-essential debhelper dkms dh-dkms cmake ninja-build bison flex git attr libc6-dev libcrypt-dev libstdc++-14-dev" \
                 " libfreetype-dev libicu-dev libcairo2-dev libcups2-dev libdrm-dev libinput-dev" \
                 " libevdev-dev libseat-dev libudev-dev zlib1g-dev libgif-dev" \
                 " libblkid-dev libbacktrace-dev libfl-dev libncurses-dev" \

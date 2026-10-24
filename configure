@@ -1,6 +1,11 @@
 #!/bin/sh
 #   --build-type=TYPE           CMake build type: Debug|Release (default: Debug)
 #   --chroot-build              Use chroot sysroot for libraries/headers
+#   --chroot-exec                Run cmake/ninja (and buildtools) INSIDE the chroot via
+#                                 chroot(), instead of on the host with sysroot flags.
+#                                 Requires --chroot-build, and only for a native (non-cross)
+#                                 arch. Every build invocation then needs root for chroot();
+#                                 see build/scripts/lib/chroot.sh's chroot_exec_build().
 #   --chroot-path=PATH          Path to chroot (default: <build>/LIVE_BOOT/chroot)
 #   --arch=ARCH                 Target architecture: amd64, arm64, arm32, riscv64
 #                                 (default: autodetected from `uname -m` for native builds)
@@ -18,6 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 BUILD_TYPE="Debug"
 CHROOT_BUILD=0
+CHROOT_EXEC=0
 CHROOT_PATH=""
 TARGET_ARCH=""
 OVERRIDE_TOOLCHAIN=""
@@ -40,6 +46,9 @@ for arg in "$@"; do
         --chroot-build)
             CHROOT_BUILD=1
             ;;
+        --chroot-exec)
+            CHROOT_EXEC=1
+            ;;
         --chroot-path=*)
             CHROOT_PATH="${arg#*=}"
             ;;
@@ -56,7 +65,7 @@ for arg in "$@"; do
             SANITIZE="${arg#*=}"
             ;;
         --help|-h)
-            head -n 17 "$0" | grep "^#" | sed 's/^# \?//'
+            head -n 20 "$0" | grep "^#" | sed 's/^# \?//'
             exit 0
             ;;
         *)
@@ -67,12 +76,100 @@ for arg in "$@"; do
     esac
 done
 
+# --chroot-build has no effect in the --build-buildtools early-exit path
+# (it never reads VITRUVIAN_CHROOT_BUILD), so don't require it there too.
+if [ $BUILDTOOLS_ONLY -eq 0 ] && [ $CHROOT_EXEC -eq 1 ] && [ $CHROOT_BUILD -ne 1 ]; then
+    echo "Error: --chroot-exec requires --chroot-build."
+    exit 1
+fi
+
+# Resolve effective arch (CLI > buildstate.conf > autodetect from `uname -m`).
+# Autodetection only fires for native builds; passing --override-toolchain
+# or --arch skips it. Cross-compilation always requires --arch. Moved
+# ahead of --build-buildtools (rather than after, as it used to be): that
+# shortcut now also needs to know the arch, to find/create a chroot for
+# --chroot-exec.
+if [ -z "$TARGET_ARCH" ]; then
+    if [ -f ./buildstate.conf ]; then
+        . ./buildstate.conf
+        TARGET_ARCH="${ARCH:-}"
+    fi
+fi
+if [ -z "$TARGET_ARCH" ]; then
+    _host_machine=$(uname -m)
+    case "$_host_machine" in
+        x86_64|amd64)      TARGET_ARCH="amd64" ;;
+        aarch64|arm64)     TARGET_ARCH="arm64" ;;
+        armv7*|armv6*|armhf) TARGET_ARCH="arm32" ;;
+        riscv64)           TARGET_ARCH="riscv64" ;;
+        *)
+            echo "Error: cannot autodetect a supported arch from 'uname -m' = $_host_machine."
+            echo "Supported: amd64, arm64, arm32, riscv64. Pass --arch=<name> explicitly."
+            exit 1
+            ;;
+    esac
+    echo "Autodetected target arch: $TARGET_ARCH (host: $_host_machine)"
+fi
+
+# Map user-facing arch to setupenv arch form
+case "$TARGET_ARCH" in
+    amd64|x86_64)    _setup_arch=amd64 ;;
+    arm64)           _setup_arch=arm64 ;;
+    arm32|armhf|arm) _setup_arch=arm32 ;;
+    riscv64)         _setup_arch=riscv64 ;;
+    *) echo "Error: Unknown architecture: $TARGET_ARCH"; exit 1 ;;
+esac
+
 # --build-buildtools shortcut: build the host buildtools tree and exit.
 if [ $BUILDTOOLS_ONLY -eq 1 ]; then
     mkdir -p "$SCRIPT_DIR/buildtools"
-    cd "$SCRIPT_DIR/buildtools"
-    cmake -DBUILDTOOLS_MODE=1 .. -GNinja
-    ninja
+    if [ $CHROOT_EXEC -eq 1 ]; then
+        # --chroot-exec is native-only (checked again, more thoroughly,
+        # further down for the main configure path) -- re-check here too
+        # since --build-buildtools exits long before reaching that check.
+        _bt_host_machine="$(uname -m)"
+        case "$_bt_host_machine" in
+            x86_64|amd64)  _bt_native_setup_arch=amd64 ;;
+            aarch64|arm64) _bt_native_setup_arch=arm64 ;;
+            riscv64)       _bt_native_setup_arch=riscv64 ;;
+            *) _bt_native_setup_arch="" ;;
+        esac
+        if [ "$_setup_arch" != "$_bt_native_setup_arch" ]; then
+            echo "Error: --chroot-exec only supports a native build -- $TARGET_ARCH was requested on a $_bt_host_machine host."
+            exit 1
+        fi
+
+        . "$SCRIPT_DIR/build/scripts/lib/common.sh"
+        . "$SCRIPT_DIR/build/scripts/lib/chroot.sh"
+
+        if [ -n "$CHROOT_PATH" ]; then
+            # An explicit override is on the caller to have ready; auto-
+            # creation below only applies to the default location, which
+            # follows the generated.<arch>/image_tree/chroot convention
+            # setupenv.sh/chroot_create() actually know how to build.
+            [ -d "$CHROOT_PATH" ] || { echo "Error: --chroot-path $CHROOT_PATH does not exist."; exit 1; }
+            _abs_chroot_path="$(realpath "$CHROOT_PATH")"
+        else
+            _bt_basedir="$SCRIPT_DIR/generated.$_setup_arch"
+            mkdir -p "$_bt_basedir"
+            if [ ! -d "$_bt_basedir/image_tree/chroot" ]; then
+                log_step "No chroot yet at $_bt_basedir/image_tree/chroot -- creating one ($_setup_arch, needs sudo)..."
+                (cd "$_bt_basedir" && "$SCRIPT_DIR/build/scripts/setupenv.sh" --chroot-build --arch="$_setup_arch")
+            fi
+            _abs_chroot_path="$(realpath "$_bt_basedir/image_tree/chroot")"
+            # The main `configure --chroot-build --chroot-exec` run from inside
+            # generated.$_setup_arch/ later finds this same chroot by the same
+            # default-location rule -- nothing further to wire up.
+        fi
+
+        log_step "Bootstrapping buildtools inside the chroot ($_abs_chroot_path)..."
+        chroot_exec_build "$_abs_chroot_path" "$SCRIPT_DIR" -- \
+            /bin/bash -c "cd /build/vos/buildtools && cmake -DBUILDTOOLS_MODE=1 .. -GNinja && ninja"
+    else
+        cd "$SCRIPT_DIR/buildtools"
+        cmake -DBUILDTOOLS_MODE=1 .. -GNinja
+        ninja
+    fi
     echo "buildtools built in $SCRIPT_DIR/buildtools"
     exit 0
 fi
@@ -114,39 +211,8 @@ else
 fi
 
 
-# Resolve effective arch (CLI > buildstate.conf > autodetect from `uname -m`).
-# Autodetection only fires for native builds; passing --override-toolchain
-# or --arch skips it. Cross-compilation always requires --arch.
-if [ -z "$TARGET_ARCH" ]; then
-    if [ -f ./buildstate.conf ]; then
-        . ./buildstate.conf
-        TARGET_ARCH="${ARCH:-}"
-    fi
-fi
-if [ -z "$TARGET_ARCH" ]; then
-    _host_machine=$(uname -m)
-    case "$_host_machine" in
-        x86_64|amd64)      TARGET_ARCH="amd64" ;;
-        aarch64|arm64)     TARGET_ARCH="arm64" ;;
-        armv7*|armv6*|armhf) TARGET_ARCH="arm32" ;;
-        riscv64)           TARGET_ARCH="riscv64" ;;
-        *)
-            echo "Error: cannot autodetect a supported arch from 'uname -m' = $_host_machine."
-            echo "Supported: amd64, arm64, arm32, riscv64. Pass --arch=<name> explicitly."
-            exit 1
-            ;;
-    esac
-    echo "Autodetected target arch: $TARGET_ARCH (host: $_host_machine)"
-fi
-
-# Map user-facing arch to setupenv arch form
-case "$TARGET_ARCH" in
-    amd64|x86_64)    _setup_arch=amd64 ;;
-    arm64)           _setup_arch=arm64 ;;
-    arm32|armhf|arm) _setup_arch=arm32 ;;
-    riscv64)         _setup_arch=riscv64 ;;
-    *) echo "Error: Unknown architecture: $TARGET_ARCH"; exit 1 ;;
-esac
+# (Arch already resolved into TARGET_ARCH/_setup_arch above, ahead of the
+# --build-buildtools shortcut.)
 
 # Invoke setupenv as needed: create chroot if --chroot-build and missing,
 # or write buildstate.conf if absent (native case).
@@ -175,6 +241,24 @@ if [ -f ./CMakeCache.txt ]; then
                 echo "Error: build tree was configured as a host build, but --chroot-build was requested."
             else
                 echo "Error: build tree was configured with --chroot-build, but that flag was not passed."
+            fi
+            echo "Chroot settings cannot be changed in place."
+            echo "Remove this generated directory and start again."
+            exit 1
+        fi
+    fi
+
+    _cached_chroot_exec="$(grep -m1 '^VITRUVIAN_CHROOT_EXEC:' ./CMakeCache.txt | cut -d= -f2)"
+    if [ -n "$_cached_chroot_exec" ]; then
+        case "$_cached_chroot_exec" in
+            ON|on|1|TRUE|true|YES|yes|Y|y) _cmake_chroot_exec=1 ;;
+            *) _cmake_chroot_exec=0 ;;
+        esac
+        if [ "$CHROOT_EXEC" -ne "$_cmake_chroot_exec" ]; then
+            if [ "$CHROOT_EXEC" -eq 1 ]; then
+                echo "Error: build tree was configured without --chroot-exec, but it was requested now."
+            else
+                echo "Error: build tree was configured with --chroot-exec, but that flag was not passed."
             fi
             echo "Chroot settings cannot be changed in place."
             echo "Remove this generated directory and start again."
@@ -210,6 +294,14 @@ case "$TARGET_ARCH" in
         exit 1
         ;;
 esac
+
+if [ $CHROOT_EXEC -eq 1 ] && [ -n "$OVERRIDE_TOOLCHAIN" ]; then
+    echo "Error: --chroot-exec only supports a native build (building amd64 on an"
+    echo "amd64 host, etc.) -- not cross-compilation. Drop --chroot-exec for a"
+    echo "cross build of $TARGET_ARCH; the existing sysroot mechanism already"
+    echo "handles that case, fast, with a host-native cross-compiler."
+    exit 1
+fi
 
 # Kernel versions
 uname -r > hostkernelversion.conf
@@ -262,9 +354,13 @@ if [ $CHROOT_BUILD -eq 1 ]; then
     CMAKE_OPTS="$CMAKE_OPTS -DVITRUVIAN_CHROOT_BUILD=ON"
     if [ -n "$CHROOT_PATH" ]; then
         [ -d "$CHROOT_PATH" ] || { echo "Error: --chroot-path $CHROOT_PATH does not exist."; exit 1; }
-        CMAKE_OPTS="$CMAKE_OPTS -DVITRUVIAN_CHROOT_PATH=$CHROOT_PATH"
+        _resolved_chroot_path="$(realpath "$CHROOT_PATH")"
     else
-        CMAKE_OPTS="$CMAKE_OPTS -DVITRUVIAN_CHROOT_PATH=$(realpath ./image_tree/chroot)"
+        _resolved_chroot_path="$(realpath ./image_tree/chroot)"
+    fi
+    CMAKE_OPTS="$CMAKE_OPTS -DVITRUVIAN_CHROOT_PATH=$_resolved_chroot_path"
+    if [ $CHROOT_EXEC -eq 1 ]; then
+        CMAKE_OPTS="$CMAKE_OPTS -DVITRUVIAN_CHROOT_EXEC=ON"
     fi
 fi
 
@@ -274,7 +370,21 @@ if [ -n "$OVERRIDE_TOOLCHAIN" ]; then
     CMAKE_OPTS="$CMAKE_OPTS -DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN_FILE"
 fi
 
-cmake $CMAKE_OPTS .. -GNinja
+if [ $CHROOT_EXEC -eq 1 ]; then
+    # cmake/ninja run with the chroot's own compiler, not the host's -- see
+    # chroot_exec_build() and build/chroot.cmake's VITRUVIAN_CHROOT_EXEC
+    # branch. /build/vos is a fixed internal mountpoint (not a mirror of
+    # this host's real clone path), so every absolute path cmake bakes
+    # into CMakeCache.txt/build.ninja from here on is stable across hosts.
+    . "$SCRIPT_DIR/build/scripts/lib/common.sh"
+    . "$SCRIPT_DIR/build/scripts/lib/chroot.sh"
+    _gendir_rel="$(realpath --relative-to="$SCRIPT_DIR" "$PWD")"
+    log_step "Configuring inside the chroot ($_resolved_chroot_path)..."
+    chroot_exec_build "$_resolved_chroot_path" "$SCRIPT_DIR" -- \
+        /bin/bash -c "cd /build/vos/$_gendir_rel && cmake $CMAKE_OPTS .. -GNinja"
+else
+    cmake $CMAKE_OPTS .. -GNinja
+fi
 
 if [ $SSHDEBUG -eq 1 ]; then
     echo "NOTE: images will stage the Vitruvian (SSH Debug) entry: root or vos-live over SSH (password: live), only when booted from that entry."

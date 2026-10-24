@@ -91,6 +91,65 @@ chroot_umount() {
     sudo umount -l "$_chroot_dir/dev" 2>/dev/null || true
 }
 
+# chroot_exec_build CHROOT_PATH REPO_ROOT -- <command...>
+#
+# Runs <command...> inside CHROOT_PATH, with REPO_ROOT (the whole repo,
+# generated.<arch>/ included) bind-mounted at the fixed internal path
+# /build/vos -- fixed rather than mirroring the host's own clone path, so
+# every path cmake/ninja bake into CMakeCache.txt/build.ninja is the same
+# regardless of where the repo happens to live on a given machine.
+#
+# REPO_ROOT physically contains generated.<arch>/image_tree/chroot (= this
+# very CHROOT_PATH), so the bind mount's target ends up nested inside its
+# own source -- the same self-referential mount create_iso already does
+# (see "mount -o bind ... $_chroot_dir/tmp" above) and has shipped safely
+# with, because nothing recursively walks the whole tree past that
+# mountpoint. cmake/ninja work off explicit file lists, not blind
+# recursive scans, so this is safe the same way -- just never run a bare
+# `find`/`cp -r` over /build/vos from the host side without -xdev.
+#
+# Unlike chroot_isolated(), this does NOT isolate net/PID/UTS or remount
+# /proc/sys read-only -- that part of chroot_isolated's isolation exists
+# to contain untrusted Debian maintainer scripts during package install,
+# and would only get in the way of an ordinary compile (which may well
+# want real network access, and isn't a security boundary issue).
+#
+# It DOES still run in its own private MOUNT namespace (via unshare), same
+# as chroot_isolated -- not for containment, but so every mount made here
+# (the /build/vos bind, chroot_mount's proc/sys/dev, and critically any
+# *nested* mount a step running under this -- e.g. nexus-dkms's own
+# build-nexus-dkms-chroot.sh, invoked by ninja while already inside this
+# chroot -- makes on its own) is torn down automatically the moment this
+# process tree exits, success or crash, without ever becoming visible to
+# the host's real mount table. Relying on a trap for cleanup instead (as
+# an earlier version of this function did) leaves a window where a nested
+# `sudo mount --bind` from deep inside a long `ninja` run shares the
+# host's mount namespace -- exactly the kind of leak that must not happen
+# for something that runs for the entire length of a build, not a quick
+# admin command.
+_CHROOT_EXEC_BUILD_INNER='_mnt="$1"; _repo="$2"; _root="$3"; shift 3
+mkdir -p "$_mnt" || exit 1
+mount --bind "$_repo" "$_mnt" || exit 1
+mkdir -p "$_root/proc" "$_root/sys" "$_root/dev" || exit 1
+mountpoint -q "$_root/proc" || { mount -t proc proc "$_root/proc" || exit 1; }
+mountpoint -q "$_root/sys" || { mount --rbind /sys "$_root/sys" || exit 1; }
+mountpoint -q "$_root/dev" || { mount --rbind /dev "$_root/dev" || exit 1; }
+cp -L /etc/resolv.conf "$_root/etc/resolv.conf" 2>/dev/null || true
+exec chroot "$_root" /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin "$@"'
+
+chroot_exec_build() {
+    _ceb_chroot="$1"; shift
+    _ceb_repo="$1"; shift
+    [ "$1" = "--" ] && shift
+
+    [ -d "$_ceb_chroot" ] || die "Chroot directory not found: $_ceb_chroot"
+    [ -d "$_ceb_repo" ] || die "Repo root not found: $_ceb_repo"
+
+    sudo unshare --mount --propagation private \
+        /bin/sh -c "$_CHROOT_EXEC_BUILD_INNER" sh \
+        "$_ceb_chroot/build/vos" "$_ceb_repo" "$_ceb_chroot" "$@"
+}
+
 # create_iso purges the -dev packages from the chroot it squashes; put
 # back whatever is missing before compiling. The .deb cache makes it an unpack.
 chroot_restore_dev_packages() {
@@ -260,8 +319,13 @@ VOSEOF
         printf 'force-unsafe-io\n' \
           | sudo tee "$_chroot_dir/etc/dpkg/dpkg.cfg.d/vos-build-unsafe-io" >/dev/null
     fi
+    # chroot() doesn't reset PATH — it inherits whatever the host shell (and
+    # sudo) had, which may lack /usr/sbin even though that's where Debian
+    # ships sbin-only binaries like locale-gen in a non-merged-usr chroot.
+    # Set it explicitly so lookups resolve against the guest, not the host.
+    _vos_chroot_path="/usr/sbin:/usr/bin:/sbin:/bin"
     # Download with the network, install isolated: cups-pdf's postinst ran lpadmin against the host's cupsd.
-    sudo chroot "$_chroot_dir" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "\
+    sudo chroot "$_chroot_dir" /usr/bin/env $CHROOT_PROXY PATH="$_vos_chroot_path" DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "\
 echo 'vitruvian' > /etc/hostname && \
 apt update && apt install -y --download-only --no-install-recommends $_base_pkgs $_dev_pkgs \$DEBUG_PACKAGES"
     if [ "${VOS_NATIVE_UNPACK:-0}" = 1 ]; then
@@ -269,7 +333,7 @@ apt update && apt install -y --download-only --no-install-recommends $_base_pkgs
         # Any refusal falls back to the emulated apt transaction.
         _native_ok=0
         if native_pkg_unpack "$_chroot_dir" \
-           && chroot_isolated "$_chroot_dir" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "\
+           && chroot_isolated "$_chroot_dir" /usr/bin/env $CHROOT_PROXY PATH="$_vos_chroot_path" DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "\
 dpkg --configure -a && \
 echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen && locale-gen && \
 exit"; then
@@ -279,7 +343,7 @@ exit"; then
         fi
     fi
     if [ "${_native_ok:-0}" = 0 ]; then
-        chroot_isolated "$_chroot_dir" /usr/bin/env $CHROOT_PROXY DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "\
+        chroot_isolated "$_chroot_dir" /usr/bin/env $CHROOT_PROXY PATH="$_vos_chroot_path" DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 /bin/bash -c "\
 apt install -y --no-install-recommends $_base_pkgs $_dev_pkgs \$DEBUG_PACKAGES && \
 echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen && locale-gen && \
 exit"

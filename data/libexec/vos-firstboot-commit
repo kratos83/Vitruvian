@@ -26,7 +26,11 @@ STATE_DIR="$ROOT/var/lib/vos"
 if [ "$ROOT" = "/" ]; then
     IN=""
 else
-    IN="chroot $ROOT"
+    # chroot() doesn't reset PATH -- it inherits whatever the caller had,
+    # so a sbin-only tool (locale-gen, useradd, usermod, ...) that exists
+    # only at $ROOT/usr/sbin can go "command not found" if the caller's
+    # own PATH lacks /usr/sbin. Force a PATH that resolves inside $ROOT.
+    IN="chroot $ROOT env PATH=/usr/sbin:/usr/bin:/sbin:/bin"
 fi
 
 if [ -e "$SENTINEL" ]; then

@@ -106,13 +106,51 @@ load_buildstate() {
                 die "Chroot mismatch: buildstate.conf says CHROOT_BUILD=${CHROOT_BUILD:-0} but cmake was configured with VITRUVIAN_CHROOT_BUILD=$_cached_chroot. Remove this directory and start again."
             fi
         fi
+
+        # Set by `configure --chroot-exec`: _run_ninja() below runs ninja
+        # inside the chroot via chroot() instead of bare on the host.
+        _cached_chroot_exec="$(grep -m1 '^VITRUVIAN_CHROOT_EXEC:' "$BASEDIR/CMakeCache.txt" | cut -d= -f2)"
+        case "$_cached_chroot_exec" in
+            ON|on|1|TRUE|true|YES|yes|Y|y) CHROOT_EXEC=1 ;;
+            *) CHROOT_EXEC=0 ;;
+        esac
     fi
 }
 
+# Runs "$@" (e.g. `ninja`, `ninja clean`, `cpack`) -- bare on the host
+# (default), or, when the tree was configured with `configure
+# --chroot-exec`, inside the chroot via chroot_exec_build() (same split
+# configure's own cmake invocation uses). Anything that reads
+# CMakeCache.txt/consults CMAKE_ROOT -- not just the compiler -- needs to
+# run from in there, cpack included: it looks up its own template files
+# under the *chroot's* cmake installation, which won't generally match
+# whatever cmake version the host happens to have.
+_run_in_build_env() {
+    if [ "${CHROOT_EXEC:-0}" -eq 1 ]; then
+        _rbe_chroot_path="$(grep -m1 '^VITRUVIAN_CHROOT_PATH:' "$BASEDIR/CMakeCache.txt" | cut -d= -f2)"
+        [ -n "$_rbe_chroot_path" ] \
+            || die "VITRUVIAN_CHROOT_EXEC is set but VITRUVIAN_CHROOT_PATH is missing from CMakeCache.txt."
+        _rbe_repo_root="$(cd "$BASEDIR/.." && pwd)"
+        _rbe_gendir_rel="$(realpath --relative-to="$_rbe_repo_root" "$BASEDIR")"
+        chroot_exec_build "$_rbe_chroot_path" "$_rbe_repo_root" -- \
+            /bin/bash -c "cd /build/vos/$_rbe_gendir_rel && $*"
+    else
+        "$@"
+    fi
+}
+
+_run_ninja() {
+    _run_in_build_env ninja "$@"
+}
+
 cmd_clean() {
-    require_cmd ninja "ninja-build"
+    load_buildstate
+    [ "${CHROOT_EXEC:-0}" -eq 1 ] || require_cmd ninja "ninja-build"
+    if [ "${CHROOT_EXEC:-0}" -eq 1 ] && ! sudo -v; then
+        die "sudo authentication required: this tree was configured with --chroot-exec."
+    fi
     log_step "Cleaning build..."
-    ninja clean
+    _run_ninja clean
 }
 
 cmd_build() {
@@ -209,13 +247,16 @@ cmd_build() {
     fi
 
     if [ -z "$_image_type" ]; then
-        require_cmd ninja "ninja-build"
+        [ "${CHROOT_EXEC:-0}" -eq 1 ] || require_cmd ninja "ninja-build"
+        if [ "${CHROOT_EXEC:-0}" -eq 1 ] && ! sudo -v; then
+            die "sudo authentication required: this tree was configured with --chroot-exec."
+        fi
         if [ "$_regenerate" -eq 1 ]; then
             chroot_regenerate "$BASEDIR" "$ARCH"
         fi
         [ "$_has_chroot" -eq 1 ] && chroot_restore_dev_packages "$BASEDIR" "$ARCH"
         log_step "Running ninja build..."
-        ninja
+        _run_ninja
 
         # Packages-only: still generate MANIFEST and honour --output-dir.
         mkdir -p "$BASEDIR/output"
@@ -268,7 +309,7 @@ cmd_build() {
         die "Image build requires a chroot at $BASEDIR/image_tree/chroot. Reconfigure with --chroot-build, or pass --regenerate-chroot."
     fi
 
-    require_cmd ninja "ninja-build"
+    [ "${CHROOT_EXEC:-0}" -eq 1 ] || require_cmd ninja "ninja-build"
 
     if [ "$_regenerate" -eq 1 ]; then
         chroot_regenerate "$BASEDIR" "$ARCH"
@@ -284,12 +325,12 @@ cmd_build() {
 
     chroot_restore_dev_packages "$BASEDIR" "$ARCH"
     log_step "Running ninja build..."
-    ninja
+    _run_ninja
 
     log_step "Packaging debs..."
     # Drop older VOS builds first: the image installs every *.deb here.
     rm -f "$BASEDIR"/VOS-*-Linux-*.deb
-    cpack
+    _run_in_build_env cpack
 
     for _t in $_types; do
         case "$_t" in
