@@ -32,14 +32,14 @@ board_config() {
         raspberry)
             case "$_field" in
                 arch)           printf 'arm64' ;;
-                label)          printf 'Raspberry Pi 4/5' ;;
+                label)          printf 'Raspberry Pi 4/5, Zero 2 W' ;;
                 partition_fmt)  printf 'dos' ;;
                 boot_style)     printf 'rpi-firmware' ;;
                 boot_size_mb)   printf '512' ;;
                 root_fs)        printf 'ext4' ;;
                 bootloader)     printf 'rpi-bootloader' ;;
                 extra_pkgs)     printf 'raspberrypi-bootloader libraspberrypi-bin' ;;
-                dtb_files)      printf 'broadcom/bcm2711-rpi-4-b.dtb broadcom/bcm2712-rpi-5-b.dtb' ;;
+                dtb_files)      printf 'broadcom/bcm2711-rpi-4-b.dtb broadcom/bcm2712-rpi-5-b.dtb broadcom/bcm2837-rpi-zero-2-w.dtb' ;;
             esac
             ;;
         rpi-arm32)

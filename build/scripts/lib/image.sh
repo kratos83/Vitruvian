@@ -882,6 +882,49 @@ fi
 SSHEOF
 }
 
+# The Pi Zero 2 W's Wi-Fi chip is sold as BCM43436, but brcmfmac identifies it as
+# BCM43430 revision 2 and asks for brcm/brcmfmac43430b0-sdio.{bin,clm_blob,txt}.
+# Debian's firmware-brcm80211 ships neither those nor the 43436 files, so the Wi-Fi
+# never comes up. Fetch Raspberry Pi's copy, pinned to a commit and checked by hash.
+# Wi-Fi is optional: a failed download warns and the image is built without it.
+_RPI_ZERO2W_FW_COMMIT="3ab8ca8e989a08c4a3cd7f614645311c475b97eb"
+_RPI_ZERO2W_FW_FILES="brcmfmac43436-sdio.bin:510a7dd1e056199b309425548ee0bd846993a1837ac7fa1e4d3e641f05a1327a \
+brcmfmac43436-sdio.clm_blob:fce7cbb62ffa6a5a65ca97b13f6fbf28d06c02d986c2072d65bf72164755fc34 \
+brcmfmac43436-sdio.txt:4cda90facd8844cff60d80b34b24ecbae76adb9a62508a109461b8bf42b478d1"
+
+_install_rpi_zero2w_wifi_firmware() {
+    _fw_mnt="$1"
+    _fw_dir="$_fw_mnt/usr/lib/firmware/brcm"
+    _fw_tmp="$(mktemp -d)" || return 1
+    _fw_base="https://raw.githubusercontent.com/RPi-Distro/firmware-nonfree/$_RPI_ZERO2W_FW_COMMIT/debian/config/brcm80211/brcm"
+    _fw_ok=1
+    for _fw_spec in $_RPI_ZERO2W_FW_FILES; do
+        _fw_name="${_fw_spec%%:*}"
+        _fw_sum="${_fw_spec##*:}"
+        if ! curl -fsSL --retry 3 -o "$_fw_tmp/$_fw_name" "$_fw_base/$_fw_name" \
+            || [ "$(sha256sum "$_fw_tmp/$_fw_name" | cut -d' ' -f1)" != "$_fw_sum" ]; then
+            _fw_ok=0
+            break
+        fi
+    done
+    if [ "$_fw_ok" = 1 ]; then
+        sudo mkdir -p "$_fw_dir"
+        for _fw_ext in bin clm_blob txt; do
+            for _fw_stem in brcmfmac43436-sdio brcmfmac43430b0-sdio; do
+                sudo install -m 644 "$_fw_tmp/brcmfmac43436-sdio.$_fw_ext" \
+                    "$_fw_dir/$_fw_stem.$_fw_ext"
+            done
+        done
+        # The board-specific NVRAM name wins over the generic one when both exist.
+        sudo install -m 644 "$_fw_tmp/brcmfmac43436-sdio.txt" \
+            "$_fw_dir/brcmfmac43430b0-sdio.raspberrypi,model-zero-2-w.txt"
+        log_info "  installed Pi Zero 2 W Wi-Fi firmware"
+    else
+        log_warn "  Pi Zero 2 W Wi-Fi firmware not installed (download or checksum failed)"
+    fi
+    rm -rf "$_fw_tmp"
+}
+
 create_raspberry() {
     _basedir="$1"
     _board="${2:-raspberry}"
@@ -1078,6 +1121,11 @@ apt-get autoremove -y --purge" || die "raspberry chroot bash-c failed"
             log_warn "  dtb not found: $_dtb_path"
         fi
     done
+
+    if [ "$_board" = "raspberry" ]; then
+        log_step "Installing Pi Zero 2 W Wi-Fi firmware..."
+        _install_rpi_zero2w_wifi_firmware "$_mnt"
+    fi
 
     log_step "Writing RPi boot config..."
     if [ "$_board_arch" = "arm64" ]; then
